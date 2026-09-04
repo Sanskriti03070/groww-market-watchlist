@@ -6,11 +6,14 @@ Next.js 16 project scaffolded, connected to a Vercel project, Neon Postgres
 provisioned, Drizzle configured, `docs/` directory established.
 
 ## 2. Data layer
-**Status: Not started**
-Drizzle schema for all tables (accounts, symbols, watchlists, watchlist_stocks,
-prices_current, price_daily_history, derived_stats, conditions,
-last_seen_snapshots, poll lease). Migrations. Seed script for the fixed symbol
-universe.
+**Status: Slice A complete for owner/symbol/watchlist tables**
+Drizzle schema and migrations for `owners`, `symbols`, `watchlist_items`
+(see docs/ENGINEERING_DECISIONS.md for why there is no `watchlists` table).
+Seed script for the fixed ~53-symbol universe. Tables for later slices
+(prices_current, price_daily_history, derived_stats, conditions,
+last_seen_snapshots, poll lease) are still not started — see Slice A's
+"Future state keys" note in the review for the ownership decisions already
+locked in for two of them.
 
 ## 3. Market-data source
 **Status: Not started**
@@ -19,9 +22,13 @@ logic with the atomic poll lease. Vercel Cron route and configuration for the
 backstop refresh.
 
 ## 4. Watchlist core
-**Status: Not started**
-Capability-token creation and resolution. CRUD for watchlists and the stocks on
-them. Search over the fixed symbol universe. Drag-based reordering.
+**Status: API complete (Slice A); UI not started**
+Capability-token creation and resolution. CRUD for the single watchlist's
+items (add/remove/reorder) as route handlers, with the approved
+concurrency/data-integrity invariants enforced and tested. There is no
+search endpoint by design (GET /api/symbols returns the fixed universe).
+Drag-based reordering UI is not built - Slice A ships the API it would call
+(PUT /api/watchlist/order).
 
 ## 5. Last-seen / since-last-check
 **Status: Not started**

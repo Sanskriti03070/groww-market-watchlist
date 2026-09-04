@@ -1,5 +1,17 @@
 # Architecture
 
+## Implementation status
+
+**Slice A is implemented**: owner/capability identity, the fixed symbol
+universe, and the single per-owner watchlist (add/remove/reorder) — see
+`db/schema.ts`, `db/migrations/`, `lib/watchlist.ts`, `lib/auth.ts`, and the
+six route handlers under `app/api/`. The "Capability-token model" section
+below reflects what's built. There is no `watchlists` table (see
+docs/ENGINEERING_DECISIONS.md) — everything else in this document (the
+market-data poller, poll lease, quote cache, daily history, conditions and
+trigger state machine, stale/unavailable handling, since-last-check) is
+still design only, not yet built.
+
 ## Product/system goal
 
 A watchlist that does two things a plain price table doesn't: shows a user what
