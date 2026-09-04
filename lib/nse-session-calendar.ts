@@ -8,10 +8,27 @@ import type { Instant } from "@/lib/market-quote";
 
 export type SessionState = "OPEN" | "PRE_OPEN" | "CLOSED" | "HOLIDAY";
 
+/**
+ * A read of the calendar as of one instant: the current state, today's
+ * regular open (if today trades), and the most recently completed regular
+ * session. This is the only shape quote-reliability classification consumes
+ * - it never re-derives calendar facts itself.
+ */
+export type SessionSnapshot = {
+  state: SessionState;
+  currentOpen: Instant | null;
+  lastCompleted: { open: Instant; close: Instant } | null;
+};
+
 const TIMEZONE = "Asia/Kolkata";
 const PRE_OPEN_START = "09:00";
 const REGULAR_OPEN = "09:15";
 const REGULAR_CLOSE = "15:30";
+
+// How far back getSessionSnapshot will search for a completed session
+// before giving up. NSE holiday clusters never run anywhere near this long;
+// it exists only to keep the search provably finite.
+const MAX_LOOKBACK_DAYS = 10;
 
 // NSE equity/capital-market trading holidays for 2026. Calendar dates
 // (IST), not timestamps - kept as plain "YYYY-MM-DD" strings and compared
@@ -53,6 +70,7 @@ const istFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 type IstParts = { year: number; month: number; day: number; time: string; weekday: string };
+type CalendarDate = { year: number; month: number; day: number };
 
 function istPartsOf(instant: Instant): IstParts {
   const parts = istFormatter.formatToParts(instant);
@@ -66,8 +84,44 @@ function istPartsOf(instant: Instant): IstParts {
   };
 }
 
-function dateKey(parts: IstParts): string {
-  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+function dateKey({ year, month, day }: CalendarDate): string {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// IST is a fixed UTC+5:30 offset with no daylight saving, so a given IST
+// calendar day's regular open/close are always the same UTC instants.
+function sessionBoundsOf({ year, month, day }: CalendarDate): { open: Instant; close: Instant } {
+  return {
+    open: new Date(Date.UTC(year, month - 1, day, 3, 45, 0, 0)), // 09:15 IST
+    close: new Date(Date.UTC(year, month - 1, day, 10, 0, 0, 0)), // 15:30 IST
+  };
+}
+
+function isTradingDay(date: CalendarDate): boolean {
+  // Probe midday IST so the weekday check goes through the same Intl-based
+  // logic as everything else, without needing a real Instant for the day.
+  const midday = new Date(Date.UTC(date.year, date.month - 1, date.day, 6, 0, 0, 0));
+  const weekday = istPartsOf(midday).weekday;
+  if (weekday === "Sat" || weekday === "Sun") {
+    return false;
+  }
+  return !NSE_HOLIDAYS_2026.has(dateKey(date));
+}
+
+function dayBefore(date: CalendarDate): CalendarDate {
+  const prev = new Date(Date.UTC(date.year, date.month - 1, date.day) - 24 * 60 * 60 * 1000);
+  return { year: prev.getUTCFullYear(), month: prev.getUTCMonth() + 1, day: prev.getUTCDate() };
+}
+
+function findLastCompletedBefore(date: CalendarDate): { open: Instant; close: Instant } | null {
+  let cursor = dayBefore(date);
+  for (let i = 0; i < MAX_LOOKBACK_DAYS; i++) {
+    if (isTradingDay(cursor)) {
+      return sessionBoundsOf(cursor);
+    }
+    cursor = dayBefore(cursor);
+  }
+  return null;
 }
 
 export function getSessionState(instant: Instant): SessionState {
@@ -90,8 +144,22 @@ export function getSessionState(instant: Instant): SessionState {
 
 /** The 15:30 IST regular-session close on the IST calendar day `instant` falls on. */
 export function regularSessionCloseFor(instant: Instant): Instant {
-  const { year, month, day } = istPartsOf(instant);
-  // IST is a fixed UTC+5:30 offset with no daylight saving, so 15:30 IST on
-  // a given IST calendar day is always exactly 10:00 UTC that same day.
-  return new Date(Date.UTC(year, month - 1, day, 10, 0, 0, 0));
+  return sessionBoundsOf(istPartsOf(instant)).close;
+}
+
+/**
+ * A read of the calendar as of `now`: current state, today's open (if today
+ * trades), and the most recently completed regular session - today's, if
+ * today already traded and closed, otherwise the last prior trading day.
+ */
+export function getSessionSnapshot(now: Instant): SessionSnapshot {
+  const today = istPartsOf(now);
+  const todayBounds = isTradingDay(today) ? sessionBoundsOf(today) : null;
+  const todayAlreadyCompleted = todayBounds !== null && now.getTime() >= todayBounds.close.getTime();
+
+  return {
+    state: getSessionState(now),
+    currentOpen: todayBounds?.open ?? null,
+    lastCompleted: todayAlreadyCompleted ? todayBounds : findLastCompletedBefore(today),
+  };
 }
