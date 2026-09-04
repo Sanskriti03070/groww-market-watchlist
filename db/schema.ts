@@ -3,11 +3,13 @@
 // there is no `watchlists` table.
 
 import {
+  bigint,
   boolean,
   check,
   customType,
   index,
   integer,
+  numeric,
   pgEnum,
   pgTable,
   text,
@@ -79,4 +81,53 @@ export const watchlistItems = pgTable(
       table.position,
     ),
   ],
+);
+
+// One row per canonical symbol, overwritten on every refresh. There is
+// deliberately no status/reliability column here: LIVE/STALE/UNAVAILABLE is
+// derived at read time from fetched_at plus session state, never stored.
+export const quotes = pgTable(
+  "quotes",
+  {
+    symbol: text("symbol")
+      .primaryKey()
+      .references(() => symbols.symbol, { onDelete: "restrict" }),
+    lastPrice: numeric("last_price", { precision: 14, scale: 4 }).notNull(),
+    previousClose: numeric("previous_close", {
+      precision: 14,
+      scale: 4,
+    }).notNull(),
+    dayOpen: numeric("day_open", { precision: 14, scale: 4 }),
+    dayHigh: numeric("day_high", { precision: 14, scale: 4 }),
+    dayLow: numeric("day_low", { precision: 14, scale: 4 }),
+    weekHigh52: numeric("week_high_52", { precision: 14, scale: 4 }),
+    weekLow52: numeric("week_low_52", { precision: 14, scale: 4 }),
+    volume: bigint("volume", { mode: "number" }),
+    providerTs: timestamp("provider_ts", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    lastErrorCode: text("last_error_code"),
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }),
+  },
+  (table) => [
+    check("quotes_last_price_check", sql`${table.lastPrice} > 0`),
+    check("quotes_previous_close_check", sql`${table.previousClose} > 0`),
+  ],
+);
+
+// Singleton row (id is always 'global') holding the shared poller's lease
+// and cycle/backoff state. The CHECK, not application code, is what
+// prevents a second row from ever existing.
+export const marketRefreshState = pgTable(
+  "market_refresh_state",
+  {
+    id: text("id").primaryKey(),
+    leaseHolder: text("lease_holder"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    cycleStartedAt: timestamp("cycle_started_at", { withTimezone: true }),
+    cycleCompletedAt: timestamp("cycle_completed_at", { withTimezone: true }),
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    backoffUntil: timestamp("backoff_until", { withTimezone: true }),
+  },
+  (table) => [check("market_refresh_state_id_check", sql`${table.id} = 'global'`)],
 );

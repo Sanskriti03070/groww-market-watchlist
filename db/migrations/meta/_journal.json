@@ -15,6 +15,13 @@
       "when": 1788532557143,
       "tag": "0001_deferrable_position_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788553849605,
+      "tag": "0002_tan_maddog",
+      "breakpoints": true
     }
   ]
 }
