@@ -22,11 +22,15 @@ export type ObservationBaseline = {
   sessionDate: string;
 };
 
+// BELOW_THRESHOLD carries thresholdPercent for the same reason MEANINGFUL
+// does: the UI explains *why* a movement was or wasn't judged meaningful,
+// and that explanation needs the actual per-stock adaptive threshold this
+// module already computed - never a value re-derived in the frontend.
 export type SinceLastCheckState =
   | { kind: "NO_BASELINE" }
   | { kind: "NOT_COMPARABLE"; reason: "CURRENT_UNTRUSTWORTHY" }
   | { kind: "UNCHANGED_SESSION" }
-  | { kind: "BELOW_THRESHOLD"; deltaPercent: number; baselinePrice: number }
+  | { kind: "BELOW_THRESHOLD"; deltaPercent: number; baselinePrice: number; thresholdPercent: number }
   | { kind: "MEANINGFUL"; direction: "UP" | "DOWN"; deltaPercent: number; baselinePrice: number; thresholdPercent: number };
 
 function isFiniteNumber(value: unknown): value is number {
@@ -128,7 +132,12 @@ export function evaluateSinceLastCheck(
       thresholdPercent: change.thresholdPercent,
     };
   }
-  return { kind: "BELOW_THRESHOLD", deltaPercent: change.deltaPercent, baselinePrice: baseline.price };
+  return {
+    kind: "BELOW_THRESHOLD",
+    deltaPercent: change.deltaPercent,
+    baselinePrice: baseline.price,
+    thresholdPercent: change.thresholdPercent,
+  };
 }
 
 /** Whether an acknowledgement of the current quote could validly move the baseline forward. */

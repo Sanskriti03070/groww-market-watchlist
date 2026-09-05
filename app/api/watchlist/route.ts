@@ -9,9 +9,13 @@ import { requireOwner } from "@/lib/auth";
 import { handleRoute, jsonResponse } from "@/lib/http";
 import { getDatabaseNow, getWatchlistWithQuotes } from "@/lib/db/quotes-repo";
 import { getSessionSnapshot, istCalendarDateOf } from "@/lib/nse-session-calendar";
-import { resolveReliability } from "@/lib/quote-reliability";
+import { resolveReliability, type Reliability } from "@/lib/quote-reliability";
 import { canAdvanceBaseline, evaluateSinceLastCheck, type SinceLastCheckState } from "@/lib/since-last-check";
 import { issueObservationToken } from "@/lib/observation-token";
+import { toAlertView, type AlertView } from "@/lib/alerts/api";
+import * as alertsRepo from "@/lib/alerts/repo";
+import { listAlerts } from "@/lib/alerts/service";
+import { changePercentOf as fullPrecisionChangePercentOf } from "@/lib/market-quote";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -37,7 +41,12 @@ function toSinceLastCheckResponse(state: SinceLastCheckState) {
         thresholdPercent: round2(state.thresholdPercent),
       };
     case "BELOW_THRESHOLD":
-      return { kind: state.kind, deltaPercent: round2(state.deltaPercent), baselinePrice: state.baselinePrice };
+      return {
+        kind: state.kind,
+        deltaPercent: round2(state.deltaPercent),
+        baselinePrice: state.baselinePrice,
+        thresholdPercent: round2(state.thresholdPercent),
+      };
     case "NOT_COMPARABLE":
       return { kind: state.kind, reason: state.reason };
     default:
@@ -53,6 +62,50 @@ export async function GET(request: NextRequest) {
     const now = await getDatabaseNow(db);
     const session = getSessionSnapshot(now);
     const rows = await getWatchlistWithQuotes(db, ownerId);
+
+    // Alert presentation reuses this same request's already-fetched quotes
+    // (below) - no second market read, and never a live provider fetch
+    // (that only ever happens from lib/market/refresh-service.ts).
+    const ownerAlerts = await listAlerts(db, ownerId);
+    const alertsBySymbol = new Map<string, typeof ownerAlerts>();
+    for (const alert of ownerAlerts) {
+      const forSymbol = alertsBySymbol.get(alert.symbol) ?? [];
+      forSymbol.push(alert);
+      alertsBySymbol.set(alert.symbol, forSymbol);
+    }
+    const alertSymbols = [...alertsBySymbol.keys()];
+    const [alertSymbolActiveStatuses, latestTriggersByAlert] = await Promise.all([
+      alertsRepo.getSymbolActiveStatuses(db, alertSymbols),
+      alertsRepo.getLatestTriggersForAlerts(
+        db,
+        ownerAlerts.map((a) => a.id),
+      ),
+    ]);
+
+    function alertViewsFor(symbol: string, reliability: Reliability, quote: typeof rows[number]["quote"]): AlertView[] {
+      const forSymbol = alertsBySymbol.get(symbol);
+      if (!forSymbol) {
+        return [];
+      }
+      const presentationQuote =
+        quote === null
+          ? null
+          : {
+              reliability,
+              lastPrice: Number(quote.lastPrice),
+              changePercent: fullPrecisionChangePercentOf(quote.lastPrice, quote.previousClose),
+              dayHigh: quote.dayHigh === null ? null : Number(quote.dayHigh),
+              dayLow: quote.dayLow === null ? null : Number(quote.dayLow),
+              previousClose: Number(quote.previousClose),
+            };
+      return forSymbol.map((alert) =>
+        toAlertView(alert, {
+          isSymbolActive: alertSymbolActiveStatuses.get(symbol) ?? false,
+          quote: presentationQuote,
+          latestTrigger: latestTriggersByAlert.get(alert.id) ?? null,
+        }),
+      );
+    }
 
     const items = rows.map((row) => {
       const reliability = resolveReliability({ fetchedAt: row.quote?.fetchedAt ?? null, now, session });
@@ -109,6 +162,7 @@ export async function GET(request: NextRequest) {
         },
         sinceLastCheck: toSinceLastCheckResponse(sinceLastCheck),
         observationToken,
+        alerts: alertViewsFor(row.symbol, reliability, row.quote),
       };
     });
 

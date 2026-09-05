@@ -146,12 +146,21 @@ export async function getWatchlistWithQuotes(db: Database, ownerId: string): Pro
   }));
 }
 
+export type UpsertedQuote = PersistedQuote & { symbol: CanonicalSymbol };
+
 /**
  * Inserts or updates the successful quote for one symbol. An older, slower
  * refresh must never clobber a newer successful one, so the update side of
  * the upsert only applies when the incoming fetchedAt is actually newer.
+ *
+ * Returns the row actually persisted, or null if this call didn't win (the
+ * existing row was already at least as new). Postgres only returns a row
+ * from an ON CONFLICT DO UPDATE ... WHERE when that WHERE condition was
+ * true, so this is an exact "did this call's data become the truth" signal
+ * - callers (see lib/market/refresh-service.ts) use it to know which
+ * symbols were genuinely updated this cycle, as opposed to merely fetched.
  */
-export async function upsertSuccessfulQuote(db: Database, quote: NormalizedQuote): Promise<void> {
+export async function upsertSuccessfulQuote(db: Database, quote: NormalizedQuote): Promise<UpsertedQuote | null> {
   const values = {
     symbol: quote.symbol,
     lastPrice: quote.lastPrice,
@@ -168,14 +177,27 @@ export async function upsertSuccessfulQuote(db: Database, quote: NormalizedQuote
     lastErrorCode: null,
   };
 
-  await db
+  const [row] = await db
     .insert(quotesTable)
     .values(values)
     .onConflictDoUpdate({
       target: quotesTable.symbol,
       set: values,
       setWhere: sql`${quotesTable.fetchedAt} < excluded.fetched_at`,
+    })
+    .returning({
+      symbol: quotesTable.symbol,
+      lastPrice: quotesTable.lastPrice,
+      previousClose: quotesTable.previousClose,
+      dayOpen: quotesTable.dayOpen,
+      dayHigh: quotesTable.dayHigh,
+      dayLow: quotesTable.dayLow,
+      weekHigh52: quotesTable.weekHigh52,
+      weekLow52: quotesTable.weekLow52,
+      volume: quotesTable.volume,
+      fetchedAt: quotesTable.fetchedAt,
     });
+  return row ?? null;
 }
 
 /**

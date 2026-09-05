@@ -14,6 +14,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -155,5 +156,91 @@ export const symbolObservations = pgTable(
   (table) => [
     primaryKey({ columns: [table.ownerId, table.symbol] }),
     check("symbol_observations_baseline_price_check", sql`${table.baselinePrice} > 0`),
+  ],
+);
+
+// -1 = below the configured side, +1 = at/above it. Shared by alerts.last_side
+// and alert_triggers.previous_side/new_side so the state machine and its
+// trigger history use one consistent encoding.
+export const alertConditionType = pgEnum("alert_condition_type", ["PRICE_LEVEL", "DAY_MOVE"]);
+export const alertDirection = pgEnum("alert_direction", ["ABOVE", "BELOW", "UP", "DOWN"]);
+export const alertState = pgEnum("alert_state", ["ACTIVE", "TRIGGERED", "DISABLED"]);
+
+// A crossing is a transition, not a property of one quote - last_side is
+// the side observed as of last_evaluated_quote_at, and only a transition
+// into the configured side produces a row in alert_triggers. HIGHLIGHTED is
+// derived at read time (D3) and is never a column here.
+export const alerts = pgTable(
+  "alerts",
+  {
+    id: uuid("id").primaryKey(),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    symbol: text("symbol")
+      .notNull()
+      .references(() => symbols.symbol, { onDelete: "restrict" }),
+    conditionType: alertConditionType("condition_type").notNull(),
+    direction: alertDirection("direction").notNull(),
+    thresholdValue: numeric("threshold_value", { precision: 14, scale: 4 }).notNull(),
+    state: alertState("state").notNull().default("ACTIVE"),
+    lastSide: smallint("last_side"),
+    lastEvaluatedQuoteAt: timestamp("last_evaluated_quote_at", { withTimezone: true }),
+    version: integer("version").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check("alerts_threshold_value_check", sql`${table.thresholdValue} > 0`),
+    check("alerts_last_side_check", sql`${table.lastSide} is null or ${table.lastSide} in (-1, 1)`),
+    check(
+      "alerts_direction_matches_condition_type_check",
+      sql`(${table.conditionType} = 'PRICE_LEVEL' and ${table.direction} in ('ABOVE', 'BELOW')) or (${table.conditionType} = 'DAY_MOVE' and ${table.direction} in ('UP', 'DOWN'))`,
+    ),
+    index("alerts_owner_id_idx").on(table.ownerId),
+    // Evaluation reads "non-disabled alerts for symbol X" - a partial index
+    // keyed on that exact shape, rather than a general (symbol, state) index.
+    index("alerts_symbol_evaluation_idx")
+      .on(table.symbol)
+      .where(sql`${table.state} <> 'DISABLED'`),
+  ],
+);
+
+// One row per FALSE->TRUE crossing. Structured facts only, not UI copy.
+// quote_fetched_at is the observation that caused the trigger, and
+// UNIQUE(alert_id, quote_fetched_at) is what makes "at most one trigger per
+// crossing" a database guarantee rather than an application promise.
+export const alertTriggers = pgTable(
+  "alert_triggers",
+  {
+    id: uuid("id").primaryKey(),
+    alertId: uuid("alert_id")
+      .notNull()
+      .references(() => alerts.id, { onDelete: "cascade" }),
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    symbol: text("symbol")
+      .notNull()
+      .references(() => symbols.symbol, { onDelete: "restrict" }),
+    triggeredAt: timestamp("triggered_at", { withTimezone: true }).notNull(),
+    quoteFetchedAt: timestamp("quote_fetched_at", { withTimezone: true }).notNull(),
+    observedPrice: numeric("observed_price", { precision: 14, scale: 4 }).notNull(),
+    thresholdValue: numeric("threshold_value", { precision: 14, scale: 4 }).notNull(),
+    conditionType: alertConditionType("condition_type").notNull(),
+    direction: alertDirection("direction").notNull(),
+    previousSide: smallint("previous_side").notNull(),
+    newSide: smallint("new_side").notNull(),
+    dayChangePercent: numeric("day_change_percent", { precision: 14, scale: 4 }),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("alert_triggers_alert_id_quote_fetched_at_unique").on(table.alertId, table.quoteFetchedAt),
+    check("alert_triggers_observed_price_check", sql`${table.observedPrice} > 0`),
+    check("alert_triggers_threshold_value_check", sql`${table.thresholdValue} > 0`),
+    check("alert_triggers_previous_side_check", sql`${table.previousSide} in (-1, 1)`),
+    check("alert_triggers_new_side_check", sql`${table.newSide} in (-1, 1)`),
+    index("alert_triggers_alert_id_idx").on(table.alertId),
+    index("alert_triggers_owner_id_idx").on(table.ownerId),
   ],
 );

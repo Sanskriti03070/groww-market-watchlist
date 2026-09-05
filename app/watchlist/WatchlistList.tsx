@@ -7,11 +7,17 @@ import type { SymbolInfo, WatchlistItem } from "./api";
 type Props = {
   items: WatchlistItem[];
   symbolByCode: Map<string, SymbolInfo>;
+  now: Date;
   onReorder: (symbols: string[]) => Promise<void>;
   onRemove: (symbol: string) => void;
+  onCreateAlert: (symbol: string) => void;
   pendingRemove: string | null;
   isReordering: boolean;
+  /** False while a search/filter/sort narrows or reorders what's shown - reordering a partial or resorted view isn't a meaningful position edit. */
+  reorderEnabled: boolean;
 };
+
+const HEADERS = ["Stock", "Price", "Day%", "Volume", "Since Last Check", "Market Status", "Actions"] as const;
 
 function moveSymbol(order: string[], symbol: string, toIndex: number): string[] {
   const fromIndex = order.indexOf(symbol);
@@ -33,7 +39,17 @@ function symbolUnderPoint(x: number, y: number): string | null {
   return row?.dataset.symbol ?? null;
 }
 
-export function WatchlistList({ items, symbolByCode, onReorder, onRemove, pendingRemove, isReordering }: Props) {
+export function WatchlistList({
+  items,
+  symbolByCode,
+  now,
+  onReorder,
+  onRemove,
+  onCreateAlert,
+  pendingRemove,
+  isReordering,
+  reorderEnabled,
+}: Props) {
   const [dragSymbol, setDragSymbol] = useState<string | null>(null);
   const [optimisticOrder, setOptimisticOrder] = useState<string[] | null>(null);
 
@@ -42,9 +58,6 @@ export function WatchlistList({ items, symbolByCode, onReorder, onRemove, pendin
 
   function startDrag(symbol: string) {
     return (event: ReactPointerEvent<HTMLButtonElement>) => {
-      // A reorder from the previous drag is still saving; the position set
-      // it's about to commit to isn't final yet, so don't let a second drag
-      // start from a mid-flight order.
       if (optimisticOrder !== null) {
         return;
       }
@@ -84,20 +97,41 @@ export function WatchlistList({ items, symbolByCode, onReorder, onRemove, pendin
   return (
     <div>
       {isReordering && <p className="mb-2 text-sm text-muted">Saving order…</p>}
-      <ul className="flex flex-col gap-2">
-        {displayOrder.map((symbol) => (
-          <WatchlistItemRow
-            key={symbol}
-            symbol={symbol}
-            info={symbolByCode.get(symbol)}
-            sinceLastCheck={itemBySymbol.get(symbol)?.sinceLastCheck ?? { kind: "NOT_COMPARABLE", reason: "CURRENT_UNTRUSTWORTHY" }}
-            isPending={pendingRemove === symbol}
-            isDragging={dragSymbol === symbol}
-            onRemove={() => onRemove(symbol)}
-            onDragHandlePointerDown={startDrag(symbol)}
-          />
-        ))}
-      </ul>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] border-separate border-spacing-y-2 text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted">
+              {HEADERS.map((header, index) => (
+                <th key={header} scope="col" className={`px-3 pb-1 font-medium sm:px-4 ${index === 0 ? "text-left" : "text-right"}`}>
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {displayOrder.map((symbol) => {
+              const item = itemBySymbol.get(symbol);
+              if (!item) return null;
+              return (
+                <WatchlistItemRow
+                  key={symbol}
+                  symbol={symbol}
+                  info={symbolByCode.get(symbol)}
+                  quote={item.quote}
+                  sinceLastCheck={item.sinceLastCheck}
+                  now={now}
+                  isPending={pendingRemove === symbol}
+                  isDragging={dragSymbol === symbol}
+                  reorderEnabled={reorderEnabled}
+                  onRemove={() => onRemove(symbol)}
+                  onCreateAlert={() => onCreateAlert(symbol)}
+                  onDragHandlePointerDown={startDrag(symbol)}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -11,7 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["lib/**/*.test.ts"],
+    include: ["lib/**/*.test.ts", "app/**/*.test.ts"],
     globalSetup: ["./lib/__tests__/global-setup.ts"],
     // Tests exercise real concurrent Postgres transactions within a test;
     // running test files themselves one at a time keeps that deterministic

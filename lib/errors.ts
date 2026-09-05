@@ -33,3 +33,34 @@ export function staleMembershipError(): AppError {
     "The submitted order does not match the watchlist's current membership. Refetch and retry.",
   );
 }
+
+export function alertNotFoundError(): AppError {
+  // Deliberately the same shape whether the id is malformed, belongs to
+  // another owner, or simply doesn't exist - a tampered id must behave
+  // exactly like a real one that was never there.
+  return new AppError(404, "alert_not_found", "Alert not found.");
+}
+
+export function symbolNotOnWatchlistError(symbol: string): AppError {
+  return new AppError(422, "symbol_not_on_watchlist", `"${symbol}" is not on your watchlist.`);
+}
+
+export function alertSymbolInactiveError(symbol: string): AppError {
+  return new AppError(422, "symbol_inactive", `"${symbol}" is not currently active.`);
+}
+
+export function invalidAlertThresholdError(): AppError {
+  return new AppError(422, "invalid_threshold", "The threshold is not valid for this alert.");
+}
+
+export function symbolAlertCapExceededError(max: number): AppError {
+  return new AppError(409, "symbol_alert_cap_exceeded", `A symbol cannot have more than ${max} alerts.`);
+}
+
+export function ownerAlertCapExceededError(max: number): AppError {
+  return new AppError(409, "owner_alert_cap_exceeded", `You cannot have more than ${max} alerts.`);
+}
+
+export function alertVersionConflictError(): AppError {
+  return new AppError(409, "version_conflict", "This alert has changed since you last loaded it. Refetch and retry.");
+}

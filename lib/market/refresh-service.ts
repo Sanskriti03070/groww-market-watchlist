@@ -9,12 +9,16 @@ import type { Database } from "@/db/types";
 import {
   acquireRefreshLease,
   getActiveEquitySymbolRefs,
+  getDatabaseNow,
   recordSymbolFailure,
   releaseRefreshLease,
   upsertSuccessfulQuote,
 } from "@/lib/db/quotes-repo";
+import { evaluateAlertsForRefreshedSymbols, type QuoteObservation } from "@/lib/alerts/service";
 import { nseLiveSource } from "@/lib/market/nse-live-source";
 import type { FetchOutcome, MarketSource } from "@/lib/market/source";
+import { getSessionSnapshot } from "@/lib/nse-session-calendar";
+import { resolveReliability } from "@/lib/quote-reliability";
 
 const LEASE_TTL_MS = 30_000;
 
@@ -50,19 +54,45 @@ export async function refreshMarketData(db: Database, source: MarketSource = nse
     success = true;
   }
 
-  // T2: successful quote writes, symbol-failure writes, and refresh-state
-  // completion/failure/backoff bookkeeping all commit together. Partial
-  // success is still valid within this - completed symbols commit even
-  // though others in this cycle failed - but the lease/state update is
-  // part of the same commit as the quote data it describes.
+  // T2: successful quote writes, symbol-failure writes, alert evaluation/
+  // trigger insertion, and refresh-state completion/failure/backoff
+  // bookkeeping all commit together. Partial success is still valid within
+  // this - completed symbols commit even though others in this cycle
+  // failed - but the lease/state update, and every alert transition it
+  // caused, are part of the same commit as the quote data that drove them.
   await db.transaction(async (tx) => {
     if (outcome.kind === "CYCLE_OK") {
+      // Database time and session state are resolved once for the whole
+      // cycle and reused for every quote's reliability, rather than
+      // re-reading either per symbol.
+      const now = await getDatabaseNow(tx);
+      const session = getSessionSnapshot(now);
+      const observations: QuoteObservation[] = [];
+
       for (const quote of outcome.quotes) {
-        await upsertSuccessfulQuote(tx, quote);
+        // Only a quote that actually became the persisted truth this cycle
+        // (see upsertSuccessfulQuote's monotonic guard) is eligible for
+        // alert evaluation - a slower/duplicate/out-of-order fetch that
+        // lost the race must never drive an alert transition.
+        const persisted = await upsertSuccessfulQuote(tx, quote);
+        if (persisted) {
+          observations.push({
+            symbol: persisted.symbol,
+            lastPrice: persisted.lastPrice,
+            previousClose: persisted.previousClose,
+            fetchedAt: persisted.fetchedAt,
+            reliability: resolveReliability({ fetchedAt: persisted.fetchedAt, now, session }),
+          });
+        }
       }
       for (const failure of outcome.symbolFailures) {
         await recordSymbolFailure(tx, failure, new Date());
       }
+
+      // Failed symbols never reach `observations` at all, so their alerts
+      // are never selected for evaluation - a full CYCLE_FAILED above
+      // means this whole block, and therefore every alert, is skipped.
+      await evaluateAlertsForRefreshedSymbols(tx, now, observations);
     }
     // Ownership check inside releaseRefreshLease (WHERE lease_holder = holder)
     // ensures an expired old holder can never clear a newer holder's lease.

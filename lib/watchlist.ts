@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type { Database } from "@/db/types";
 import { owners, symbolObservations, symbols, watchlistItems } from "@/db/schema";
+import { disableAlertsForSymbol } from "@/lib/alerts/repo";
 import {
   inactiveSymbolError,
   maxSizeExceededError,
@@ -125,6 +126,11 @@ export async function removeSymbolFromWatchlist(
       await tx
         .delete(symbolObservations)
         .where(and(eq(symbolObservations.ownerId, ownerId), eq(symbolObservations.symbol, symbol)));
+
+      // Symbol lifecycle: alerts on this symbol are disabled, never deleted
+      // - trigger history and the owner's alert intent survive so a later
+      // re-add can pick up where they left off (see lib/alerts/repo.ts).
+      await disableAlertsForSymbol(tx, ownerId, symbol, new Date());
     }
 
     return readCanonical(tx, ownerId);

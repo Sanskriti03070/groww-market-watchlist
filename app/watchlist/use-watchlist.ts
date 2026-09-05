@@ -120,8 +120,13 @@ export function useWatchlist() {
     setActionError(null);
     setPendingAdd(symbol);
     try {
-      const result = await addWatchlistItem(symbol);
-      setItems(result.items);
+      // The mutation endpoint itself only confirms membership/position
+      // (see lib/watchlist.ts's readCanonical) - it never carries market
+      // data, so the UI's item list is only ever set from a full GET, never
+      // from a mutation response directly.
+      await addWatchlistItem(symbol);
+      const fresh = await fetchWatchlist();
+      setItems(fresh.items);
     } catch (error) {
       setActionError(messageFor(error));
     } finally {
@@ -133,8 +138,9 @@ export function useWatchlist() {
     setActionError(null);
     setPendingRemove(symbol);
     try {
-      const result = await removeWatchlistItem(symbol);
-      setItems(result.items);
+      await removeWatchlistItem(symbol);
+      const fresh = await fetchWatchlist();
+      setItems(fresh.items);
     } catch (error) {
       setActionError(messageFor(error));
     } finally {
@@ -147,8 +153,9 @@ export function useWatchlist() {
     setReorderNotice(null);
     setIsReordering(true);
     try {
-      const result = await reorderWatchlistItems(orderedSymbols);
-      setItems(result.items);
+      await reorderWatchlistItems(orderedSymbols);
+      const fresh = await fetchWatchlist();
+      setItems(fresh.items);
     } catch (error) {
       if (error instanceof WatchlistApiError && error.status === 409) {
         // Stale permutation: the approved contract is refetch-and-replace,

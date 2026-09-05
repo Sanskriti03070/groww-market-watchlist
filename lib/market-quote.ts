@@ -69,3 +69,20 @@ export interface MarketSource {
   readonly id: "nse-live" | "replay";
   fetchQuotes(refs: SymbolRef[]): Promise<FetchOutcome>;
 }
+
+/**
+ * Full-precision day-change percent from the two `numeric` fields Postgres
+ * already gives us as strings. Display layers round this for presentation
+ * (see app/api/watchlist/route.ts); anything that feeds a decision - since-
+ * last-check, DAY_MOVE alert evaluation, highlighting - must use this
+ * unrounded value instead, per the rule that display rounding must never
+ * affect evaluation.
+ */
+export function changePercentOf(lastPrice: Decimal, previousClose: Decimal): number | null {
+  const last = Number(lastPrice);
+  const prev = Number(previousClose);
+  if (!Number.isFinite(last) || !Number.isFinite(prev) || prev === 0) {
+    return null;
+  }
+  return ((last - prev) / prev) * 100;
+}

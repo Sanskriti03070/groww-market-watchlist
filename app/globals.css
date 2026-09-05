@@ -1,41 +1,135 @@
 @import "tailwindcss";
 
 :root {
+  /* Page surface: an extremely subtle blue wash across the whole canvas -
+     never fades all the way to plain white, since the white section panels
+     (Alerts, Watchlist) are what should read as "white" by contrast. */
+  --page-top: #eaf1fc;
+  --page-bottom: #f5f8fd;
+
   --background: #ffffff;
-  --foreground: #171717;
-  --surface: #f7f7f8;
-  --border: #e5e5e7;
-  --muted: #6b7280;
-  --accent: #2563eb;
-  --danger: #dc2626;
+  --foreground: #10192e; /* dark navy */
+  --foreground-soft: #3a4459;
+
+  --surface: #ffffff;
+  --surface-muted: #f6f8fc;
+  --border: #e4e9f2;
+  --border-strong: #d3dbe8;
+
+  --muted: #6b7488;
+  --muted-soft: #97a0b2;
+
+  /* Green: positive movement and primary actions. */
+  --green: #148a4c;
+  --green-strong: #0f6f3d;
+  --green-soft: #eaf8f0;
+  --green-soft-border: #bfe6cd;
+
+  /* Red: negative movement only. */
+  --red: #c22a2a;
+  --red-soft: #fdeeee;
+  --red-soft-border: #f3c8c8;
+
+  /* Yellow: "Near target" accent - nowhere else. */
+  --yellow: #a15c07;
+  --yellow-soft: #fdf3df;
+  --yellow-soft-border: #f0dcab;
+
+  --danger: #c22a2a;
+  --accent: #148a4c;
+
+  --shadow-card: 0 1px 2px rgba(16, 25, 46, 0.04), 0 2px 8px rgba(16, 25, 46, 0.05);
+  --shadow-card-hover: 0 2px 4px rgba(16, 25, 46, 0.05), 0 6px 16px rgba(16, 25, 46, 0.08);
+  --shadow-modal: 0 12px 32px rgba(16, 25, 46, 0.16), 0 4px 10px rgba(16, 25, 46, 0.08);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-foreground-soft: var(--foreground-soft);
   --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-muted: var(--muted);
+  --color-muted-soft: var(--muted-soft);
+  --color-green: var(--green);
+  --color-green-strong: var(--green-strong);
+  --color-green-soft: var(--green-soft);
+  --color-green-soft-border: var(--green-soft-border);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-red-soft-border: var(--red-soft-border);
+  --color-yellow: var(--yellow);
+  --color-yellow-soft: var(--yellow-soft);
+  --color-yellow-soft-border: var(--yellow-soft-border);
   --color-accent: var(--accent);
   --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --surface: #161617;
-    --border: #2a2a2d;
-    --muted: #9ca3af;
-    --accent: #60a5fa;
-    --danger: #f87171;
-  }
+* {
+  min-width: 0;
 }
 
 body {
-  background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  /* The page canvas stays a barely-there pale blue throughout, not just near
+     the top - the white section panels (Alerts, Watchlist) are what create
+     contrast, not a fade back to white. */
+  background: linear-gradient(180deg, var(--page-top) 0%, var(--page-bottom) 100%);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: var(--green-soft-border);
+}
+
+/* A calm, short focus ring everywhere - visible for keyboard users, quiet for mouse users via :focus-visible. */
+:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+.modal-backdrop {
+  animation: fade-in 120ms ease-out;
+}
+.modal-panel {
+  animation: modal-in 150ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* Horizontal alert rail - native scroll, no JS, hidden scrollbar kept thin and unobtrusive. */
+.scroll-rail {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.scroll-rail::-webkit-scrollbar {
+  height: 6px;
+}
+.scroll-rail::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
 }
