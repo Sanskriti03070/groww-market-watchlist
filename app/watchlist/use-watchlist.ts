@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  acknowledgeObservations,
   addWatchlistItem,
   createOwner,
   fetchSymbolUniverse,
@@ -12,6 +13,8 @@ import {
   type SymbolInfo,
   type WatchlistItem,
 } from "./api";
+
+const ACK_RETRY_DELAY_MS = 2000;
 
 type BootstrapStatus = "loading" | "ready" | "error";
 
@@ -77,6 +80,41 @@ export function useWatchlist() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void bootstrap();
   }, [bootstrap]);
+
+  // Fires after a render actually committed this data (not merely when the
+  // fetch resolved). Collects whatever observation tokens that render
+  // carries and acknowledges them in one batch; a failure gets one retry
+  // and then gives up silently - this must never surface to the user.
+  useEffect(() => {
+    const tokens = items.map((item) => item.observationToken).filter((token): token is string => Boolean(token));
+    if (tokens.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        await acknowledgeObservations(tokens);
+        return;
+      } catch {
+        // retry once below
+      }
+      await new Promise((resolve) => setTimeout(resolve, ACK_RETRY_DELAY_MS));
+      if (cancelled) {
+        return;
+      }
+      try {
+        await acknowledgeObservations(tokens);
+      } catch {
+        // Silently give up.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
 
   const addSymbol = useCallback(async (symbol: string) => {
     setActionError(null);

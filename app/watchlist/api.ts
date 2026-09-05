@@ -11,10 +11,36 @@ export type SymbolInfo = {
   isActive: boolean;
 };
 
+export type Reliability = "LIVE" | "STALE" | "LAST_CLOSE" | "UNAVAILABLE_NO_DATA" | "UNAVAILABLE_TOO_OLD";
+
+export type Quote = {
+  lastPrice: string | null;
+  previousClose: string | null;
+  dayOpen: string | null;
+  dayHigh: string | null;
+  dayLow: string | null;
+  weekHigh52: string | null;
+  weekLow52: string | null;
+  volume: number | null;
+  fetchedAt: string | null;
+  changePercent: number | null;
+  reliability: Reliability;
+};
+
+export type SinceLastCheck =
+  | { kind: "NO_BASELINE" }
+  | { kind: "NOT_COMPARABLE"; reason: "CURRENT_UNTRUSTWORTHY" }
+  | { kind: "UNCHANGED_SESSION" }
+  | { kind: "BELOW_THRESHOLD"; deltaPercent: number; baselinePrice: number }
+  | { kind: "MEANINGFUL"; direction: "UP" | "DOWN"; deltaPercent: number; baselinePrice: number; thresholdPercent: number };
+
 export type WatchlistItem = {
   symbol: string;
   position: number;
   addedAt: string;
+  quote: Quote;
+  sinceLastCheck: SinceLastCheck;
+  observationToken?: string;
 };
 
 export class WatchlistApiError extends Error {
@@ -77,4 +103,10 @@ export function removeWatchlistItem(symbol: string): Promise<{ items: WatchlistI
 
 export function reorderWatchlistItems(symbols: string[]): Promise<{ items: WatchlistItem[] }> {
   return request("/api/watchlist/order", { method: "PUT", body: JSON.stringify({ symbols }) });
+}
+
+export type AckResult = { acknowledged: string[]; rejected: { token: string; reason: string }[] };
+
+export function acknowledgeObservations(tokens: string[]): Promise<AckResult> {
+  return request("/api/observations/ack", { method: "POST", body: JSON.stringify({ tokens }) });
 }

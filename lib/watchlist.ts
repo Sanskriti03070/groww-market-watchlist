@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type { Database } from "@/db/types";
-import { owners, symbols, watchlistItems } from "@/db/schema";
+import { owners, symbolObservations, symbols, watchlistItems } from "@/db/schema";
 import {
   inactiveSymbolError,
   maxSizeExceededError,
@@ -108,7 +108,7 @@ export async function removeSymbolFromWatchlist(
       .where(and(eq(watchlistItems.ownerId, ownerId), eq(watchlistItems.symbol, symbol)))
       .returning({ position: watchlistItems.position });
 
-    // Idempotent: already absent, nothing to compact.
+    // Idempotent: already absent, nothing to compact or clean up.
     if (removed) {
       // Compact positions to stay dense (0..n-1). This single statement can
       // transiently re-derive a value another untouched row already holds
@@ -119,6 +119,12 @@ export async function removeSymbolFromWatchlist(
         .update(watchlistItems)
         .set({ position: sql`${watchlistItems.position} - 1` })
         .where(and(eq(watchlistItems.ownerId, ownerId), gt(watchlistItems.position, removed.position)));
+
+      // A removed symbol's since-last-check baseline never survives the
+      // removal - re-adding it later starts a fresh lifecycle (NO_BASELINE).
+      await tx
+        .delete(symbolObservations)
+        .where(and(eq(symbolObservations.ownerId, ownerId), eq(symbolObservations.symbol, symbol)));
     }
 
     return readCanonical(tx, ownerId);

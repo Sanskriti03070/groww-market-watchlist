@@ -7,11 +7,13 @@ import {
   boolean,
   check,
   customType,
+  date,
   index,
   integer,
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -130,4 +132,28 @@ export const marketRefreshState = pgTable(
     backoffUntil: timestamp("backoff_until", { withTimezone: true }),
   },
   (table) => [check("market_refresh_state_id_check", sql`${table.id} = 'global'`)],
+);
+
+// One row per (owner, symbol): the baseline the owner last acknowledged
+// seeing. Only ever written from a trustworthy (LIVE/LAST_CLOSE) quote - see
+// docs/ENGINEERING_DECISIONS.md. No history: a new acknowledgement replaces
+// the baseline outright, and removing the symbol deletes the row.
+export const symbolObservations = pgTable(
+  "symbol_observations",
+  {
+    ownerId: uuid("owner_id")
+      .notNull()
+      .references(() => owners.id, { onDelete: "cascade" }),
+    symbol: text("symbol")
+      .notNull()
+      .references(() => symbols.symbol, { onDelete: "restrict" }),
+    baselinePrice: numeric("baseline_price", { precision: 14, scale: 4 }).notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    quoteFetchedAt: timestamp("quote_fetched_at", { withTimezone: true }).notNull(),
+    sessionDate: date("session_date").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerId, table.symbol] }),
+    check("symbol_observations_baseline_price_check", sql`${table.baselinePrice} > 0`),
+  ],
 );

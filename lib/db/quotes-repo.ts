@@ -4,7 +4,7 @@
 
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import type { Database } from "@/db/types";
-import { marketRefreshState, symbols as symbolsTable, quotes as quotesTable, watchlistItems } from "@/db/schema";
+import { marketRefreshState, symbols as symbolsTable, quotes as quotesTable, symbolObservations, watchlistItems } from "@/db/schema";
 import type { CanonicalSymbol, Decimal, Instant, NormalizedQuote, SymbolFailure, SymbolRef } from "@/lib/market-quote";
 
 export type PersistedQuote = {
@@ -67,14 +67,22 @@ export async function getQuotesForSymbols(
   return new Map(rows.map((row) => [row.symbol, row]));
 }
 
+export type ObservationBaselineRow = {
+  baselinePrice: Decimal;
+  observedAt: Instant;
+  quoteFetchedAt: Instant;
+  sessionDate: string;
+};
+
 export type WatchlistQuoteRow = {
   symbol: CanonicalSymbol;
   position: number;
   addedAt: Instant;
   quote: PersistedQuote | null;
+  observation: ObservationBaselineRow | null;
 };
 
-/** One query for one owner's watchlist joined to each symbol's latest quote, if any. */
+/** One query for one owner's watchlist joined to each symbol's latest quote and observation baseline, if any. */
 export async function getWatchlistWithQuotes(db: Database, ownerId: string): Promise<WatchlistQuoteRow[]> {
   const rows = await db
     .select({
@@ -90,9 +98,17 @@ export async function getWatchlistWithQuotes(db: Database, ownerId: string): Pro
       weekLow52: quotesTable.weekLow52,
       volume: quotesTable.volume,
       fetchedAt: quotesTable.fetchedAt,
+      baselinePrice: symbolObservations.baselinePrice,
+      observedAt: symbolObservations.observedAt,
+      quoteFetchedAt: symbolObservations.quoteFetchedAt,
+      sessionDate: symbolObservations.sessionDate,
     })
     .from(watchlistItems)
     .leftJoin(quotesTable, eq(watchlistItems.symbol, quotesTable.symbol))
+    .leftJoin(
+      symbolObservations,
+      and(eq(symbolObservations.symbol, watchlistItems.symbol), eq(symbolObservations.ownerId, watchlistItems.ownerId)),
+    )
     .where(eq(watchlistItems.ownerId, ownerId))
     .orderBy(asc(watchlistItems.position));
 
@@ -116,6 +132,16 @@ export async function getWatchlistWithQuotes(db: Database, ownerId: string): Pro
             weekLow52: row.weekLow52,
             volume: row.volume,
             fetchedAt: row.fetchedAt!,
+          },
+    // Same "NOT NULL column doubles as matched-flag" reasoning as above.
+    observation:
+      row.baselinePrice === null
+        ? null
+        : {
+            baselinePrice: row.baselinePrice,
+            observedAt: row.observedAt!,
+            quoteFetchedAt: row.quoteFetchedAt!,
+            sessionDate: row.sessionDate!,
           },
   }));
 }

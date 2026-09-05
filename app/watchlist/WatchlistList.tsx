@@ -38,6 +38,7 @@ export function WatchlistList({ items, symbolByCode, onReorder, onRemove, pendin
   const [optimisticOrder, setOptimisticOrder] = useState<string[] | null>(null);
 
   const displayOrder = optimisticOrder ?? items.map((item) => item.symbol);
+  const itemBySymbol = new Map(items.map((item) => [item.symbol, item]));
 
   function startDrag(symbol: string) {
     return (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -89,6 +90,7 @@ export function WatchlistList({ items, symbolByCode, onReorder, onRemove, pendin
             key={symbol}
             symbol={symbol}
             info={symbolByCode.get(symbol)}
+            sinceLastCheck={itemBySymbol.get(symbol)?.sinceLastCheck ?? { kind: "NOT_COMPARABLE", reason: "CURRENT_UNTRUSTWORTHY" }}
             isPending={pendingRemove === symbol}
             isDragging={dragSymbol === symbol}
             onRemove={() => onRemove(symbol)}

@@ -1,18 +1,56 @@
 "use client";
 
 import type { PointerEvent } from "react";
-import type { SymbolInfo } from "./api";
+import type { SinceLastCheck, SymbolInfo } from "./api";
 
 type Props = {
   symbol: string;
   info: SymbolInfo | undefined;
+  sinceLastCheck: SinceLastCheck;
   isPending: boolean;
   isDragging: boolean;
   onRemove: () => void;
   onDragHandlePointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
 };
 
-export function WatchlistItemRow({ symbol, info, isPending, isDragging, onRemove, onDragHandlePointerDown }: Props) {
+function formatPrice(value: number): string {
+  return value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+}
+
+/** Since-last-check has no loading state of its own - it always arrives with the rest of the row's data in one response. */
+function SinceLastCheckCell({ state }: { state: SinceLastCheck }) {
+  if (state.kind === "NO_BASELINE") {
+    return <span className="text-sm text-muted">First view</span>;
+  }
+
+  if (state.kind === "MEANINGFUL") {
+    const arrow = state.direction === "UP" ? "↑" : "↓";
+    return (
+      <div className="text-sm leading-tight">
+        <div className={state.direction === "DOWN" ? "text-danger" : "text-foreground"}>
+          {arrow}
+          {Math.abs(state.deltaPercent).toFixed(1)}%
+        </div>
+        <div className="text-muted">from ₹{formatPrice(state.baselinePrice)}</div>
+      </div>
+    );
+  }
+
+  // BELOW_THRESHOLD, NOT_COMPARABLE, and UNCHANGED_SESSION all render the
+  // same way here - reliability already explains stale/unavailable data
+  // elsewhere in the row, so this column doesn't repeat that warning.
+  return <span className="text-sm text-muted">—</span>;
+}
+
+export function WatchlistItemRow({
+  symbol,
+  info,
+  sinceLastCheck,
+  isPending,
+  isDragging,
+  onRemove,
+  onDragHandlePointerDown,
+}: Props) {
   return (
     <li
       data-symbol={symbol}
@@ -39,6 +77,10 @@ export function WatchlistItemRow({ symbol, info, isPending, isDragging, onRemove
           )}
         </div>
         {info && <div className="truncate text-sm text-muted">{info.name}</div>}
+      </div>
+
+      <div className="w-24 shrink-0 text-right">
+        <SinceLastCheckCell state={sinceLastCheck} />
       </div>
 
       <button
