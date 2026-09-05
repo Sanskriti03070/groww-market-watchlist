@@ -147,6 +147,11 @@ export function regularSessionCloseFor(instant: Instant): Instant {
   return sessionBoundsOf(istPartsOf(instant)).close;
 }
 
+/** The IST calendar date `instant` falls on, as "YYYY-MM-DD". Used to compare trading dates without duplicating IST conversion elsewhere. */
+export function istCalendarDateOf(instant: Instant): string {
+  return dateKey(istPartsOf(instant));
+}
+
 /**
  * A read of the calendar as of `now`: current state, today's open (if today
  * trades), and the most recently completed regular session - today's, if

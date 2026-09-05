@@ -30,9 +30,23 @@ export type NormalizedQuote = {
   fetchedAt: Instant;
 };
 
-export type ProviderErrorCode = "TIMEOUT" | "RATE_LIMITED" | "UPSTREAM_ERROR" | "UNREACHABLE";
+export type ProviderErrorCode =
+  | "TIMEOUT"
+  | "RATE_LIMITED"
+  | "UPSTREAM_ERROR"
+  | "UNREACHABLE";
 
-export type SymbolErrorCode = "NOT_FOUND" | "MALFORMED" | "INCOMPLETE" | "TIMEOUT";
+export type SymbolErrorCode =
+  | "NOT_FOUND"
+  | "MALFORMED"
+  | "INCOMPLETE"
+  | "TIMEOUT"
+  | "HTTP_ERROR";
+
+export type SymbolRef = {
+  symbol: CanonicalSymbol;
+  providerSymbol: string;
+};
 
 export type SymbolFailure = {
   symbol: CanonicalSymbol;
@@ -41,10 +55,17 @@ export type SymbolFailure = {
 
 /** The result of one fetch cycle: either it ran (with some symbols possibly failing individually), or it didn't run at all. */
 export type FetchOutcome =
-  | { kind: "CYCLE_OK"; quotes: NormalizedQuote[]; symbolFailures: SymbolFailure[] }
-  | { kind: "CYCLE_FAILED"; code: ProviderErrorCode; symbolFailures: SymbolFailure[] };
+  | {
+      kind: "CYCLE_OK";
+      quotes: NormalizedQuote[];
+      symbolFailures: SymbolFailure[];
+    }
+  | {
+      kind: "CYCLE_FAILED";
+      reason: ProviderErrorCode;
+    };
 
 export interface MarketSource {
   readonly id: "nse-live" | "replay";
-  fetchQuotes(symbols: CanonicalSymbol[]): Promise<FetchOutcome>;
+  fetchQuotes(refs: SymbolRef[]): Promise<FetchOutcome>;
 }

@@ -80,7 +80,10 @@ export const SYMBOL_UNIVERSE: SymbolSeed[] = [
     symbol,
     name,
     kind: "EQUITY" as const,
-    providerSymbol: `${symbol}.NS`,
+    // "-EQ" is the equity-series suffix stock-nse-india needs for an exact
+    // instrument match (see lib/market/nse-live-source.ts) - the bare
+    // symbol can resolve to the wrong company via NSE's fuzzy symbol search.
+    providerSymbol: `${symbol}-EQ`,
   })),
   ...indices.map(([symbol, name, providerSymbol]) => ({
     symbol,
