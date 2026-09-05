@@ -177,7 +177,7 @@ export function WatchlistApp() {
           now={now}
           quoteBySymbol={quoteBySymbol}
           symbolByCode={symbolByCode}
-          onEdit={(id, thresholdValue, direction) => alertsHook.edit(id, alertsHook.alerts.find((a) => a.id === id)?.version ?? 0, thresholdValue, direction)}
+          onEdit={alertsHook.edit}
           onEnable={(id) => alertsHook.enable(id)}
           onDisable={(id) => alertsHook.disable(id)}
           onDismiss={(id) => alertsHook.dismiss(id)}
