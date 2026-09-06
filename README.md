@@ -54,33 +54,61 @@ Create Alert — Set a condition for a stock
 <img width="1470" height="875" alt="Screenshot 2026-09-05 at 10 45 25 PM" src="https://github.com/user-attachments/assets/f91ef5fc-26c8-4eef-a856-b1d4d054cf6d" />
 
 ## Architecture
+```
+Browser
+  ↓  reads persisted state only
+Next.js API routes
+  ↓
+Market / Watchlist / Alerts services
+  ↓
+Neon PostgreSQL
+  ↑  lease-guarded refresh, one transaction
+Scheduled refresh (cron-job.org)
+  ↑
+NSE provider (behind an adapter)
+```
 
+The read path is separate from the write path. Reading the watchlist is one query plus
+pure functions — no network calls, no writes. Market refresh, quote persistence and alert
+evaluation all happen on the write side, inside a single transaction, so a trigger always
+points at the exact quote that caused it.
+
+
+## Tech Stack
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | Next.js, React, TypeScript |
-| Styling | Tailwind CSS |
-| Data Fetching | TanStack Query |
-| Backend | Next.js App Router / API Routes |
-| Database | Neon PostgreSQL |
+| Frontend | Next.js 16, React 19, TypeScript |
+| Styling | Tailwind CSS 4 |
+| Backend | Next.js App Router route handlers |
+| Database | Neon PostgreSQL (WebSocket pool driver) |
 | ORM | Drizzle ORM |
-| Market Data | NSE market data provider |
+| Market Data | `stock-nse-india` (unofficial NSE client, behind a provider adapter) |
 | Validation | Zod |
-| Testing | Vitest |
+| Testing | Vitest against embedded PostgreSQL |
 | Deployment | Vercel |
 | Market Refresh | cron-job.org |
+
 ## Run Locally
 ```bash
 git clone https://github.com/Sanskriti03070/groww-market-watchlist.git
 cd groww-market-watchlist
 npm install
+```
 
-Create a .env.local file using .env.example and add the required environment variables.
+Create `.env.local` from `.env.example` and set:
 
-Then run:
+- `DATABASE_URL` — Neon Postgres connection string
+- `OBSERVATION_TOKEN_SECRET` — signs the observation tokens used by Since Last Check
+- `MARKET_REFRESH_SECRET` — protects the refresh endpoint called by the scheduler
 
+```bash
+npm run db:migrate
+npm run db:seed
 npm run dev
+```
 
-Open http://localhost:3000.
+Open http://localhost:3000. No login — a session is created automatically. Add stocks,
+then revisit later to see Since Last Check populate.
