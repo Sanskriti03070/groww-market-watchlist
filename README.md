@@ -22,17 +22,17 @@ The watchlist focuses on information that helps the user decide what needs atten
 - Alerts and their current state
 
 The goal is to implement correct technical approach towards the build and their edge cases without turning the watchlist into a dashboard full of indicators.
-###- How state persists across sessions and devices
+### How state persists across sessions and devices
 Watchlist state, market quotes, observations, and alerts are stored server-side in PostgreSQL.
 The user's last successful observation is stored for each stock. When they return, the new market data can be compared against that stored observation rather than relying on browser or session state.
-###- How stale, delayed or conflicting data is handled
+### How stale, delayed or conflicting data is handled
 Market data is stored with its fetch time and reliability state.
 Live data and the latest completed market session can be used for decisions. Stale or unavailable data is shown as such but does not create new actionable signals.
 Quote updates are monotonic, so an older fetch cannot overwrite a newer one.
-###- How the system scales for larger watchlists and more users
+### How the system scales for larger watchlists and more users
 Market data is refreshed in bounded batches rather than once per browser request. Refresh cycles are protected by a database lease so multiple workers cannot run the same cycle at the same time.
 Alert evaluation happens only for symbols whose quotes actually changed. The current design keeps the system on PostgreSQL; more infrastructure can be introduced later if the workload requires it.
-###- Where to keep things simple vs add complexity
+### Where to keep things simple vs add complexity
 The read path is intentionally simple. The browser reads persisted market state instead of calling the market-data provider directly.
 Market refresh, quote persistence and alert evaluation happen on the write side. This avoids adding queues, workers or streaming infrastructure before they are necessary.
 
